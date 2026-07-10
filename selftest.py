@@ -35,6 +35,43 @@ def parser_tests():
     ok &= _ok("parse escalas", d["stops"] == 1)
     ok &= _ok("parse duração", d["duration"] == 365)
     ok &= _ok("parse a partir de", _apartir("Menores preços a partir de R$ 957 · voos") == 957)
+    ok &= _ok("a partir de: prefere o de 'Menores preços'",
+              _apartir("Bagagem a partir de R$ 65 ... Menores preços · a partir de R$ 957") == 957)
+    return ok
+
+
+def db_tests():
+    """Testa as queries do banco num SQLite temporário (offline)."""
+    import tempfile
+    from datetime import datetime, timedelta, timezone
+    from app.database.sqlite_client import SQLiteClient
+    ok = True
+    with tempfile.TemporaryDirectory() as td:
+        db = SQLiteClient(db_path=td + "/t.db")
+        now = datetime.now(timezone.utc)
+        # 3 leituras: 900, 800, depois SOBE p/ 850 (a atual)
+        for i, p in enumerate((900, 800, 850)):
+            db.record_price_point("GYN", "JPA", "2026-11-20", "oneway", p, "", 1,
+                                  (now - timedelta(hours=3 - i)).isoformat())
+        ok &= _ok("price_history_min = menor já visto",
+                  db.price_history_min("GYN", "JPA", "2026-11-20", "oneway") == 800)
+        rows = db.price_by_date("GYN", "JPA")
+        ok &= _ok("price_by_date: atual é a ÚLTIMA leitura (não o mínimo)",
+                  rows and rows[0]["price"] == 850 and rows[0]["min_price"] == 800)
+        avg, n = db.recent_stats("GYN", "JPA", "2026-11-20", "oneway")
+        ok &= _ok("recent_stats média/contagem", n == 3 and abs(avg - 850) < 0.01)
+        frac, n = db.deal_score("GYN", "JPA", "2026-11-20", "oneway", 810)
+        ok &= _ok("deal_score: 2 de 3 leituras mais caras que 810",
+                  n == 3 and abs(frac - 2 / 3) < 0.01)
+        # roundtrip não contamina oneway (e vice-versa)
+        db.record_price_point("GYN", "JPA", "2026-11-20", "roundtrip", 1300, "", 1,
+                              now.isoformat(), return_date="2026-11-29")
+        ok &= _ok("oneway não vê preço do roundtrip",
+                  db.price_history_min("GYN", "JPA", "2026-11-20", "oneway") == 800)
+        ok &= _ok("roundtrip_matrix acha o combo",
+                  db.roundtrip_matrix("GYN", "JPA")[0]["price"] == 1300)
+        ok &= _ok("WAL ativo",
+                  db._conn().execute("PRAGMA journal_mode").fetchone()[0] == "wal")
     return ok
 
 
@@ -58,6 +95,8 @@ def live_test():
 def main():
     print("=== parsers ===")
     ok = parser_tests()
+    print("=== banco ===")
+    ok = db_tests() and ok
     if "--live" in sys.argv:
         print("=== canário ao vivo ===")
         live_ok = live_test()

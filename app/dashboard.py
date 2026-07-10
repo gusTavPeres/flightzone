@@ -464,8 +464,8 @@ def render_roundtrip(db, origin, dest):
              f'{matrix}<div class="muted small" style="margin-top:8px">🟩 mais barato · '
              '🟥 mais caro · contorno verde = melhor combinação. <b>Clique em qualquer célula</b> '
              'para abrir a busca no Google Flights ↗.</div></div>')
-    foot = ('<div class="foot">Combos das suas datas: ida 19–23/nov × volta 29/nov–03/dez '
-            '(25 combinações). Gerencie as consultas no painel.</div>')
+    foot = (f'<div class="foot">{len(deps)} datas de ida × {len(rets)} de volta '
+            f'({len(combos)} combinações monitoradas). Gerencie as consultas no painel.</div>')
     return head + header + nav + card + '<div class="cols">' + block + '</div>' + foot + '</div></body></html>'
 
 

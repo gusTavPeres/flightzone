@@ -75,15 +75,19 @@ def main():
         low = c.execute("SELECT * FROM price_history WHERE checked_at>=? "
                         "ORDER BY cheapest_price ASC LIMIT 1", (since,)).fetchone()
 
-        def cheapest(cond):
+        def cheapest(cond, *params):
             r = c.execute(f"""SELECT origin,destination,departure_date,return_date,
                                      MIN(cheapest_price) AS p
                               FROM price_history WHERE checked_at>=? AND {cond}""",
-                          (since,)).fetchone()
+                          (since, *params)).fetchone()
             return r if r and r["p"] is not None else None
 
-        ida = cheapest("trip_type='oneway' AND destination='JPA'")
-        volta = cheapest("trip_type='oneway' AND destination='GYN'")
+        # par ida/volta com mais leituras (antes era GYN/JPA fixo no código)
+        from app.database.sqlite_client import SQLiteClient
+        det = SQLiteClient().detected_trip() or (None, None)
+        o, d = det
+        ida = cheapest("trip_type='oneway' AND destination=?", d) if d else None
+        volta = cheapest("trip_type='oneway' AND destination=?", o) if o else None
         casada = cheapest("trip_type='roundtrip'")
 
     if not low:
@@ -96,7 +100,7 @@ def main():
             if rd else f"✈️ {low['origin']}→{low['destination']}  {d_(low['departure_date'])} (só-ida)")
 
     lines = [
-        f"🌙 <b>Resumo do dia</b> — GYN↔JPA (últimas {args.hours}h)",
+        f"🌙 <b>Resumo do dia</b> — {o or '?'}↔{d or '?'} (últimas {args.hours}h)",
         "",
         f"💰 <b>Menor preço do dia: {money(low['cheapest_price'])}</b>",
         f"   {rota}",

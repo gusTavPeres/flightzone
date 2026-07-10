@@ -10,6 +10,7 @@ Subir o servidor:   ./.venv/bin/python -m app.main
 """
 import csv
 import io
+import threading
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -67,6 +68,9 @@ def create_app():
             dest = dest or (det[1] if det else "JPA")
         return Response(render_roundtrip(db, origin, dest), mimetype="text/html")
 
+    # 1 scrape por vez: cada /realprice abre um Chrome (~500 MB por ~40 s)
+    realprice_lock = threading.Lock()
+
     @app.get("/realprice")
     def realprice():
         import time as _time
@@ -76,12 +80,17 @@ def create_app():
         rdate = request.args.get("return_date") or None
         if not (origin and dest and date):
             return redirect("/?msg=" + quote("Faltam parâmetros para o preço real."))
+        if not realprice_lock.acquire(blocking=False):
+            return redirect("/?msg=" + quote("Já há uma leitura de preço real em andamento — "
+                                             "aguarde ~1 min e tente de novo."))
         t0 = _time.time()
         try:
             price = scrape_cheapest(origin, dest, date, rdate)
         except Exception as e:
             logger.error(f"erro no preço real: {e}")
             price = None
+        finally:
+            realprice_lock.release()
         return Response(render_realprice(origin, dest, date, rdate, price,
                                          round(_time.time() - t0)), mimetype="text/html")
 

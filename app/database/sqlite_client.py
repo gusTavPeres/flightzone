@@ -80,18 +80,25 @@ class SQLiteClient:
         self._init_db()
 
     def _conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        # timeout=15 -> espera o lock em vez de estourar "database is locked"
+        # (a web LÊ enquanto o monitor ESCREVE no mesmo arquivo)
+        conn = sqlite3.connect(self.db_path, timeout=15)
         conn.row_factory = sqlite3.Row
         return conn
 
     def _init_db(self):
         with closing(self._conn()) as c, c:
+            # WAL: leitores não bloqueiam o escritor (e vice-versa); é persistente no arquivo
+            c.execute("PRAGMA journal_mode=WAL")
             c.execute(FLIGHTS_DDL)
             c.execute(LOGS_DDL)
             c.execute(PRICE_HISTORY_DDL)
             c.execute("CREATE INDEX IF NOT EXISTS idx_route ON flights(origin,destination,departure_date)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_collected ON flights(collected_at)")
             c.execute("CREATE INDEX IF NOT EXISTS idx_ph_route ON price_history(origin,destination,departure_date)")
+            # cobre as subqueries "última leitura" (ORDER BY checked_at DESC LIMIT 1)
+            c.execute("CREATE INDEX IF NOT EXISTS idx_ph_route_time ON "
+                      "price_history(origin,destination,departure_date,checked_at)")
             cols = [r[1] for r in c.execute("PRAGMA table_info(price_history)").fetchall()]
             if "return_date" not in cols:  # migração p/ bancos antigos
                 c.execute("ALTER TABLE price_history ADD COLUMN return_date TEXT")

@@ -21,9 +21,6 @@ class Config:
     # ---- Telegram (alertas opcionais; gerado por telegram_setup.py) ----
     TELEGRAM_PATH = os.getenv("TELEGRAM_FILE", os.path.join(BASE_DIR, "telegram.json"))
 
-    # ---- Amadeus (preço real opcional; gerado por amadeus_setup.py) ----
-    AMADEUS_PATH = os.getenv("AMADEUS_FILE", os.path.join(BASE_DIR, "amadeus.json"))
-
     # ---- Coleta (Google Flights) ----
     CURRENCY = os.getenv("CURRENCY", "BRL")
     LANGUAGE = os.getenv("LANGUAGE", "pt-BR")

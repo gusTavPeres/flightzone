@@ -74,6 +74,7 @@ class Route:
         self.best = None
         self.next_due = 0.0
         self.error_alerted = False
+        self.threshold_alerted = False
         self.iv = 0.0
         self.last_price = None
 
@@ -188,11 +189,16 @@ def main():
                     det_str = ""
                     if drop > 0 or (is_error and not r.error_alerted):     # busca detalhes 1x
                         det_str = _fmt_det(extract_top_details(pg, price) or _ff_details(r))
+                    below = r.threshold is not None and price <= r.threshold
                     if drop > 0:
-                        hit = (f"\n🎯 abaixo do alvo {money(r.threshold)}!"
-                               if (r.threshold and price <= r.threshold) else "")
+                        hit = f"\n🎯 abaixo do alvo {money(r.threshold)}!" if below else ""
                         telegram_send(f"✈️ <b>{r.label}</b>\nCaiu para <b>{money(price)}</b> "
                                       f"(real) — economia {money(drop)}.{det_str}{hit}")
+                    elif below and not r.threshold_alerted:
+                        # cruzou o alvo sem ser mínima histórica nova (antes ficava mudo)
+                        telegram_send(f"🎯 <b>{r.label}</b>\n<b>{money(price)}</b> — abaixo do "
+                                      f"alvo {money(r.threshold)}.{det_str}")
+                    r.threshold_alerted = below
                     if is_error and not r.error_alerted:
                         pct = 100 * (1 - price / avg)
                         telegram_send(f"🚨 <b>POSSÍVEL TARIFA-ERRO</b>\n{r.label}\n"

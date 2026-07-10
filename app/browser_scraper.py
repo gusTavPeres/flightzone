@@ -19,13 +19,20 @@ from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-       "(KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36")
+def _ua(browser):
+    """UA com a MESMA versão do Chrome real (divergir dos Client Hints denuncia bot).
+    Só remove o 'Headless' que o headless põe no UA padrão."""
+    major = (browser.version or "120").split(".")[0]
+    return (f"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            f"(KHTML, like Gecko) Chrome/{major}.0.0.0 Safari/537.36")
 
 
 def _apartir(txt):
-    """O 'a partir de R$ X' é o MENOR preço calculado pelo próprio Google."""
-    m = re.search(r"a partir de\s*R\$[\s\xa0]*([\d.]+)", txt)
+    """O 'a partir de R$ X' é o MENOR preço calculado pelo próprio Google.
+    Prefere o que vem logo após 'Menores preços' (a página pode ter OUTROS
+    'a partir de' — bagagem, datas alternativas); senão usa o primeiro."""
+    m = (re.search(r"Menores preços[\s·.]{0,20}a partir de\s*R\$[\s\xa0]*([\d.]+)", txt)
+         or re.search(r"a partir de\s*R\$[\s\xa0]*([\d.]+)", txt))
     if m:
         d = m.group(1).replace(".", "")
         if d.isdigit():
@@ -117,7 +124,7 @@ def new_browser(p):
         "--no-sandbox", "--disable-dev-shm-usage",
         "--disable-blink-features=AutomationControlled"])
     ctx = b.new_context(locale="pt-BR", timezone_id="America/Sao_Paulo",
-                        user_agent=_UA, viewport={"width": 1280, "height": 900})
+                        user_agent=_ua(b), viewport={"width": 1280, "height": 900})
     ctx.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
     return b, ctx
 
