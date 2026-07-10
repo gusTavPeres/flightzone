@@ -1,0 +1,10 @@
+# FlightZone Local — dependências (rodam no seu PC, sem nuvem)
+fast-flights==3.0.2   # coleta do Google Flights (sem chave de API)
+Flask==3.1.3          # servidor web local
+typing_extensions     # exigido pelo fast-flights (ele não declara essa dependência)
+playwright==1.60.0    # navegador p/ ler o "preço real" (aba Menores preços) — usa o Chrome do sistema
+
+# Observação: o projeto ORIGINAL usava google-cloud-bigquery, httpx, beautifulsoup4
+# e lxml. Nesta versão local eles NÃO são necessários:
+#  - BigQuery  -> trocado por SQLite (já vem embutido no Python)
+#  - httpx/bs4 -> a Decolar é bloqueada por antibot; usamos o Google Flights

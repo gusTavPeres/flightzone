@@ -1,0 +1,5 @@
+[
+  { "from": "GRU", "to": "GIG", "date": "2026-07-23", "trip": "oneway", "max_stops": 0, "threshold": 600 },
+  { "from": "GRU", "to": "REC", "date": "2026-08-01", "trip": "oneway", "threshold": 700 },
+  { "from": "GRU", "to": "LIS", "date": "2026-09-10", "return_date": "2026-09-25", "trip": "roundtrip", "seat": "economy" }
+]
