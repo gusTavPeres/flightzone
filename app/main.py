@@ -6,10 +6,13 @@ mas roda 100% local: grava em SQLite em vez de BigQuery e coleta do
 Google Flights em vez da Decolar (que é bloqueada por antibot).
 
 Subir o servidor:   ./.venv/bin/python -m app.main
-                    (ou ./run.sh)
+                    (em produção: ./install.sh cuida de tudo via systemd)
 """
 import csv
+import hmac
 import io
+import os
+import secrets
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -29,11 +32,31 @@ from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 
+def _web_secret():
+    """Senha dos POSTs que alteram as rotas (a web escuta na LAN/VPN inteira).
+    Gerada 1x em data/web_secret (600); veja com:  cat data/web_secret"""
+    path = os.path.join(os.path.dirname(Config.DB_PATH), "web_secret")
+    if not os.path.exists(path):
+        with open(path, "w") as f:
+            f.write(secrets.token_urlsafe(16))
+        os.chmod(path, 0o600)
+    with open(path) as f:
+        return f.read().strip()
+
+
 def create_app():
     app = Flask(__name__)
     db = SQLiteClient()
     db.ensure_tables_exist()
     logger.info(f"Banco local: {Config.DB_PATH}")
+
+    @app.before_request
+    def guard_writes():
+        if request.method == "POST" and request.path.startswith("/routes"):
+            auth = request.authorization
+            if not (auth and hmac.compare_digest(auth.password or "", _web_secret())):
+                return Response("Senha exigida (usuário em branco; senha em data/web_secret).",
+                                401, {"WWW-Authenticate": 'Basic realm="FlightZone"'})
 
     @app.get("/")
     def dashboard():

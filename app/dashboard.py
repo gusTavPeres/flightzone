@@ -247,7 +247,8 @@ def _routes_section(routes):
         '<div class="addtitle">+ adicionar consulta</div>'
         f'{add_form}'
         '<div class="muted small" style="margin-top:6px">O monitor recarrega sozinho em ~1 min '
-        'após adicionar/remover.</div></div>'
+        'após adicionar/remover. 🔒 Alterações pedem senha (usuário em branco; senha em '
+        '<code>data/web_secret</code> no servidor).</div></div>'
     )
 
 

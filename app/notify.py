@@ -12,6 +12,9 @@ import urllib.parse
 import urllib.request
 
 from app.config import Config
+from app.utils.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 def _config():
@@ -50,5 +53,6 @@ def telegram_send(text: str) -> bool:
     try:
         with urllib.request.urlopen(urllib.request.Request(url, data=data), timeout=10) as r:
             return getattr(r, "status", 200) == 200
-    except Exception:
+    except Exception as e:
+        logger.warning(f"telegram_send falhou (alerta perdido): {e}")
         return False

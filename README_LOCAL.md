@@ -54,7 +54,7 @@ ignorando duplicados.
 
 ```bash
 cd ~/flightzone
-./run.sh        # sobe em http://127.0.0.1:8080
+./.venv/bin/python -m app.main    # dev; em produção o install.sh sobe via systemd
 ```
 
 Em outro terminal (ou no navegador):
@@ -113,44 +113,29 @@ print(c.execute('SELECT origin,destination,airline,price FROM flights ORDER BY p
 - Se um dia o `fast-flights` parar (o Google muda o site às vezes), basta
   atualizar: `./.venv/bin/python -m pip install -U fast-flights`.
 
-## 6. Monitor de preços (1..N rotas, anti-bloqueio) 🔔
+## 6. Sistema em produção (o que roda de verdade) 🔔
 
-Vigia uma **ou várias** rotas e avisa quando o preço **cai** (terminal + bipe +
-notificação na área de trabalho).
+O monitor contínuo é o **`realprice_monitor.py`**: 1 Chrome headless persistente
+lê o **menor preço real** ("a partir de R$ X") de cada rota do `routes.json`,
+grava em `price_history` e alerta quedas/tarifa-erro no **Telegram**. Painel web
+com histórico e matriz ida-e-volta em **http://gustavopc:8090**.
 
-**Uma rota:**
+**Instalar/atualizar tudo (serviços systemd de usuário + timers):**
 ```bash
-./monitor.sh --from GRU --to GIG --date 2026-07-23 --interval 30 --threshold 600
-# opcionais: --return 2026-08-05 --trip roundtrip --max-stops 0
+cd ~/flightzone && ./install.sh
 ```
+Sobe: `flightzone-realprice` (monitor), `flightzone-web` (painel), e os timers
+`heartbeat` (10 min), `backup` (03h), `dailysummary` (22h) e `selftest` (dom).
+As rotas são editáveis pelo próprio painel (alterações pedem a senha de
+`data/web_secret`; usuário em branco).
 
-**Várias rotas** (arquivo JSON — veja `routes.example.json`):
+**Testes:**
 ```bash
-cp routes.example.json routes.json    # edite com as suas rotas
-./monitor.sh --routes-file routes.json
+./.venv/bin/python selftest.py          # parsers + queries do banco (offline)
+./.venv/bin/python selftest.py --live   # canário: raspa um preço de verdade
 ```
 
-### Calibração anti-bloqueio (geral, vale para qualquer N)
-O que se limita é a **taxa de requisições**, não o nº de rotas. Com **T** =
-intervalo por rota (default 30 min), **N** = nº de rotas, **s_min** = gap mínimo
-global (default 15s):
+**Série temporal** em `price_history` (1 linha por checagem). Últimas 20:
+```bash
+./.venv/bin/python -c "import sqlite3;[print(r) for r in sqlite3.connect('data/flights.db').execute('SELECT checked_at,origin,destination,cheapest_price FROM price_history ORDER BY id DESC LIMIT 20')]"
 ```
-espaçamento entre requests  = max(T / N, s_min)
-intervalo efetivo por rota  = max(T, N * s_min)
-teto de requests por minuto = 60 / s_min     (fixo ~4/min, independe de N)
-```
-- Poucas rotas → cada uma recheca a cada T; requests bem espaçados.
-- Muitas rotas → o gap encosta em `s_min` e o ciclo **se estica sozinho**; a taxa
-  nunca passa do teto.
-- Bloqueio é por **IP** → o **backoff é global** (todas desaceleram juntas) e
-  decai sozinho. Ajuste com `--interval` (T), `--min-gap` (s_min), `--jitter`.
-
-### Outros
-- Série temporal em `price_history` (1 linha por checagem). Últimas 20:
-  ```bash
-  ./.venv/bin/python -c "import sqlite3;[print(r) for r in sqlite3.connect('data/flights.db').execute('SELECT checked_at,origin,destination,cheapest_price,airline FROM price_history ORDER BY id DESC LIMIT 20')]"
-  ```
-- Parar: `Ctrl+C`.
-
-**Deixar rodando sozinho (reinicia e sobe no boot):** veja as instruções no
-arquivo `flightzone-monitor.service` (serviço systemd em modo usuário).
