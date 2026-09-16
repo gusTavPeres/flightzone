@@ -4,7 +4,10 @@ Coletor de passagens aéreas das **principais companhias** (Gol, LATAM, Azul,
 Avianca, American, COPA, TAP…) rodando **100% no seu PC**, **de graça** e
 **sem chave de API**.
 
-É uma adaptação do desafio técnico `JoaoGChv/Desafio_T-cnico-Promozone`.
+É uma adaptação do desafio técnico `JoaoGChv/Desafio_T-cnico-Promozone`, de
+**João Guilherme Chaveiro** (`JoaoGChv`), colega de Pequi — o bot original
+(Docker + BigQuery, raspando a Decolar) parou de funcionar quando o antibot
+DataDome passou a bloquear a coleta.
 Mantivemos a arquitetura (API Flask → Scraper → Normalizador → Banco → Logs),
 mas trocamos as duas peças que impediam rodar localmente:
 
