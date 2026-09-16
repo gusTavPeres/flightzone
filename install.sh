@@ -36,6 +36,7 @@ fi
 "$PY" -m pip install --quiet -r requirements.txt
 echo "  ✓ dependências instaladas"
 [ -f telegram.json ] && chmod 600 telegram.json   # segredo: só o dono lê
+[ -f discord.json ]  && chmod 600 discord.json    # webhook do canal: idem
 
 # 2) serviços systemd (modo usuário)
 mkdir -p "$UNITDIR"
@@ -154,3 +155,4 @@ systemctl --user is-active flightzone-realprice flightzone-web | sed 's/^/    /'
 echo
 echo "✅ Pronto. Web em http://$HOSTBIND:$PORTBIND"
 echo "   Alertas no Telegram:  $PY telegram_setup.py <SEU_TOKEN>"
+echo "   Alertas no Discord:   echo '{\"webhook\": \"<URL_DO_WEBHOOK>\"}' > discord.json"

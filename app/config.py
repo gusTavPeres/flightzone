@@ -21,6 +21,9 @@ class Config:
     # ---- Telegram (alertas opcionais; gerado por telegram_setup.py) ----
     TELEGRAM_PATH = os.getenv("TELEGRAM_FILE", os.path.join(BASE_DIR, "telegram.json"))
 
+    # ---- Discord (webhook do canal; alertas de preço bom p/ o grupo) ----
+    DISCORD_PATH = os.getenv("DISCORD_FILE", os.path.join(BASE_DIR, "discord.json"))
+
     # ---- Coleta (Google Flights) ----
     CURRENCY = os.getenv("CURRENCY", "BRL")
     LANGUAGE = os.getenv("LANGUAGE", "pt-BR")

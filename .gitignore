@@ -3,5 +3,6 @@ data/
 __pycache__/
 *.pyc
 telegram.json
+discord.json
 amadeus.json
 routes.json

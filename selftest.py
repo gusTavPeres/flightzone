@@ -40,6 +40,31 @@ def parser_tests():
     return ok
 
 
+def deal_tests():
+    """Regra de aviso: só preço realmente bom vs. o histórico."""
+    from realprice_monitor import good_deal
+    g = lambda score, n, drop: good_deal(score, n, drop, 15, 0.85)
+    ok = True
+    ok &= _ok("histórico ok + percentil alto -> avisa", g(0.92, 40, 0))
+    ok &= _ok("histórico ok + percentil médio -> cala", not g(0.60, 40, 0))
+    ok &= _ok("histórico ok: mínima histórica sozinha não basta", not g(0.50, 40, 100))
+    ok &= _ok("histórico curto -> volta p/ mínima histórica", g(1.0, 3, 100))
+    ok &= _ok("histórico curto e sem queda -> cala", not g(1.0, 3, 0))
+    ok &= _ok("rota nova (sem leituras) -> cala", not g(None, 0, 0))
+    return ok
+
+
+def notify_tests():
+    """Alerta do Telegram tem que virar markdown no Discord — e calar se não configurado."""
+    import os
+    from app.notify import _md, discord_send
+    ok = _ok("<b> vira ** no Discord",
+             _md("✈️ <b>GYN->JPA</b>\n<b>R$ 802</b> — bom") == "✈️ **GYN->JPA**\n**R$ 802** — bom")
+    if not os.getenv("DISCORD_WEBHOOK") and not os.path.exists("discord.json"):
+        ok &= _ok("sem webhook -> no-op silencioso", discord_send("teste") is False)
+    return ok
+
+
 def db_tests():
     """Testa as queries do banco num SQLite temporário (offline)."""
     import tempfile
@@ -97,6 +122,10 @@ def main():
     ok = parser_tests()
     print("=== banco ===")
     ok = db_tests() and ok
+    print("=== regra de aviso ===")
+    ok = deal_tests() and ok
+    print("=== notificação ===")
+    ok = notify_tests() and ok
     if "--live" in sys.argv:
         print("=== canário ao vivo ===")
         live_ok = live_test()

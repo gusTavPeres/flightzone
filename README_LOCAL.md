@@ -117,8 +117,20 @@ print(c.execute('SELECT origin,destination,airline,price FROM flights ORDER BY p
 
 O monitor contínuo é o **`realprice_monitor.py`**: 1 Chrome headless persistente
 lê o **menor preço real** ("a partir de R$ X") de cada rota do `routes.json`,
-grava em `price_history` e alerta quedas/tarifa-erro no **Telegram**. Painel web
-com histórico e matriz ida-e-volta em **http://gustavopc:8090**.
+grava em `price_history` e alerta **preço bom** (mais barato que 85% das leituras
+de 30 dias da própria rota — não toda queda) no **Telegram** e, se configurado,
+no **Discord**. Painel web com histórico e matriz ida-e-volta em
+**http://gustavopc:8090**.
+
+**Avisar no Discord (canal do Pequi):** no servidor →
+*Editar canal → Integrações → Webhooks → Novo webhook → Copiar URL*, e então:
+```bash
+cd ~/flightzone && echo '{"webhook": "<URL_COPIADA>"}' > discord.json && chmod 600 discord.json
+systemctl --user restart flightzone-realprice
+```
+Vão pro canal só os alertas de preço (preço bom, abaixo do alvo, tarifa-erro);
+heartbeat, bloqueio e resumo diário continuam só no Telegram. Ajuste o rigor com
+`--deal-pct` (0.85 = top 15% mais baratos) e `--renotify` na unit do monitor.
 
 **Instalar/atualizar tudo (serviços systemd de usuário + timers):**
 ```bash

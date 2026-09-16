@@ -2,7 +2,9 @@
 Monitor de PREÇO REAL via navegador — TODAS as rotas, continuamente.
 
 Usa 1 Chrome persistente (sob xvfb = invisível), lê o "a partir de R$ X" de cada
-rota, grava no banco e alerta quedas (Telegram). Ritmo configurável + backoff
+rota, grava no banco e alerta PREÇO BOM (Telegram): não toda queda, só quando o
+preço fica entre os mais baratos do histórico da rota (percentil de 30 dias),
+repetindo só se melhorar. Ritmo configurável + backoff
 automático se o Google começar a bloquear (busca vazia repetida -> desacelera).
 
 Uso:
@@ -20,7 +22,7 @@ from app.browser_scraper import new_browser, read_cheapest_on_page, looks_blocke
 from app.scrapers.google_flights import GoogleFlightsScraper
 from app.normalizers.flight_normalizer import FlightNormalizer
 from app.links import gflights_url
-from app.notify import telegram_send, telegram_configured
+from app.notify import telegram_send, telegram_configured, broadcast
 from app.database.sqlite_client import SQLiteClient
 from app.utils.logger import setup_logger
 
@@ -62,6 +64,14 @@ def _ff_details(r):
     return {}
 
 
+def good_deal(score, nread, drop, min_reads, pct):
+    """Preço 'realmente bom' = mais barato que `pct` das leituras dos últimos 30 dias.
+    Sem histórico suficiente, cai no critério antigo (nova mínima histórica)."""
+    if score is not None and nread >= min_reads:
+        return score >= pct
+    return drop > 0
+
+
 class Route:
     def __init__(self, spec):
         o = spec.get("from") or spec.get("origin")
@@ -77,6 +87,7 @@ class Route:
         self.threshold_alerted = False
         self.iv = 0.0
         self.last_price = None
+        self.deal_price = None      # preço do último aviso de "bom negócio" (None = fora da faixa)
 
     @property
     def label(self):
@@ -100,6 +111,12 @@ def main():
                     help="reinicia o navegador a cada N buscas (evita vazamento de memória)")
     ap.add_argument("--error-pct", type=float, default=0.30,
                     help="fração abaixo da média p/ alertar tarifa-erro (0.30 = 30%%)")
+    ap.add_argument("--deal-pct", type=float, default=0.85,
+                    help="avisa quando o preço for mais barato que esta fração das leituras (30d)")
+    ap.add_argument("--deal-reads", type=int, default=15,
+                    help="leituras mínimas p/ confiar no percentil (abaixo disso usa mínima histórica)")
+    ap.add_argument("--renotify", type=float, default=0.03,
+                    help="repete o aviso só se o preço melhorar esta fração (0.03 = 3%%)")
     ap.add_argument("--base-interval", type=float, default=16.0,
                     help="minutos-alvo entre buscas da MESMA rota")
     ap.add_argument("--max-interval", type=float, default=45.0,
@@ -179,36 +196,53 @@ def main():
                 last_req = time.time()
 
                 if price is not None:
+                    # stats ANTES de gravar: a leitura atual não entra na própria comparação
+                    score, nread = db.deal_score(r.origin, r.dest, r.date, r.trip, price, r.rdate)
+                    avg, nreads = db.recent_stats(r.origin, r.dest, r.date, r.trip, r.rdate)
                     db.record_price_point(r.origin, r.dest, r.date, r.trip, price,
                                           "", 1, checked_at, return_date=r.rdate)
                     drop = (r.best - price) if (r.best is not None and price < r.best) else 0
                     if r.best is None or price < r.best:
                         r.best = price
-                    avg, nreads = db.recent_stats(r.origin, r.dest, r.date, r.trip, r.rdate)
                     is_error = bool(avg and nreads >= 15 and price <= avg * (1 - args.error_pct))
+                    good = good_deal(score, nread, drop, args.deal_reads, args.deal_pct)
+                    # avisa ao ENTRAR na faixa boa; repete só se melhorar mais que --renotify
+                    worth = good and (r.deal_price is None
+                                      or price <= r.deal_price * (1 - args.renotify))
                     det_str = ""
-                    if drop > 0 or (is_error and not r.error_alerted):     # busca detalhes 1x
+                    if worth or (is_error and not r.error_alerted):     # busca detalhes 1x
                         det_str = _fmt_det(extract_top_details(pg, price) or _ff_details(r))
                     below = r.threshold is not None and price <= r.threshold
-                    if drop > 0:
+                    if worth:
                         hit = f"\n🎯 abaixo do alvo {money(r.threshold)}!" if below else ""
-                        telegram_send(f"✈️ <b>{r.label}</b>\nCaiu para <b>{money(price)}</b> "
-                                      f"(real) — economia {money(drop)}.{det_str}{hit}")
+                        tag = "🔥 MÍNIMA HISTÓRICA — " if drop > 0 else ""
+                        cmp_ = (f"mais barato que {100 * score:.0f}% das leituras (30d)"
+                                if score is not None and nread >= args.deal_reads
+                                else f"economia {money(drop)}")
+                        broadcast(f"✈️ <b>{r.label}</b>\n{tag}<b>{money(price)}</b> — {cmp_}."
+                                  f"\n📊 média {money(avg)} · mínima {money(r.best)}"
+                                  f"{det_str}{hit}")
                     elif below and not r.threshold_alerted:
-                        # cruzou o alvo sem ser mínima histórica nova (antes ficava mudo)
-                        telegram_send(f"🎯 <b>{r.label}</b>\n<b>{money(price)}</b> — abaixo do "
-                                      f"alvo {money(r.threshold)}.{det_str}")
+                        # cruzou o alvo sem estar na faixa boa (antes ficava mudo)
+                        broadcast(f"🎯 <b>{r.label}</b>\n<b>{money(price)}</b> — abaixo do "
+                                  f"alvo {money(r.threshold)}.{det_str}")
                     r.threshold_alerted = below
+                    if worth:
+                        r.deal_price = price      # referência p/ o próximo aviso da mesma rota
+                    elif not good:
+                        r.deal_price = None       # saiu da faixa boa -> rearma
                     if is_error and not r.error_alerted:
                         pct = 100 * (1 - price / avg)
-                        telegram_send(f"🚨 <b>POSSÍVEL TARIFA-ERRO</b>\n{r.label}\n"
-                                      f"<b>{money(price)}</b> — {pct:.0f}% abaixo da média "
-                                      f"({money(avg)})!{det_str}")
+                        broadcast(f"🚨 <b>POSSÍVEL TARIFA-ERRO</b>\n{r.label}\n"
+                                  f"<b>{money(price)}</b> — {pct:.0f}% abaixo da média "
+                                  f"({money(avg)})!{det_str}")
                         r.error_alerted = True
                     elif not is_error:
                         r.error_alerted = False
-                    logger.info(f"{r.label}: {money(price)}" + (f"  🔻 -{money(drop)}" if drop else "")
-                                + ("  🚨ERRO?" if is_error else ""))
+                    logger.info(f"{r.label}: {money(price)}"
+                                + (f"  (+barato que {100 * score:.0f}%)" if score is not None else "")
+                                + (f"  🔻 -{money(drop)}" if drop else "")
+                                + ("  ✅AVISADO" if worth else "") + ("  🚨ERRO?" if is_error else ""))
                     gfails = 0
                     block_alerted = False
                     backoff = max(1.0, backoff * 0.6)
