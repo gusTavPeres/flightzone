@@ -254,6 +254,49 @@ class SQLiteClient:
                     (origin.upper(), destination.upper(), str(date), trip)).fetchone()
         return row[0] if row and row[0] is not None else None
 
+    def last_price(self, origin, destination, date, trip, return_date=None):
+        """Último preço registrado do combo — o monitor usa p/ não re-anunciar o
+        que já estava barato antes de reiniciar."""
+        with closing(self._conn()) as c:
+            if return_date:
+                row = c.execute(
+                    """SELECT cheapest_price FROM price_history
+                       WHERE origin=? AND destination=? AND departure_date=?
+                             AND trip_type=? AND return_date=?
+                       ORDER BY checked_at DESC LIMIT 1""",
+                    (origin.upper(), destination.upper(), str(date), trip, str(return_date))).fetchone()
+            else:
+                row = c.execute(
+                    """SELECT cheapest_price FROM price_history
+                       WHERE origin=? AND destination=? AND departure_date=? AND trip_type=?
+                             AND (return_date IS NULL OR return_date='')
+                       ORDER BY checked_at DESC LIMIT 1""",
+                    (origin.upper(), destination.upper(), str(date), trip)).fetchone()
+        return row[0] if row else None
+
+    def days_since_cheaper(self, origin, destination, date, trip, price, return_date=None):
+        """Há quantos dias não se registrava preço <= `price` — vira "menor preço
+        dos últimos N dias" no alerta. None = nunca esteve tão barato."""
+        w = ("AND return_date=?" if return_date
+             else "AND (return_date IS NULL OR return_date='')")
+        args = [origin.upper(), destination.upper(), str(date), trip]
+        if return_date:
+            args.append(str(return_date))
+        with closing(self._conn()) as c:
+            row = c.execute(
+                f"""SELECT MAX(checked_at) FROM price_history
+                    WHERE origin=? AND destination=? AND departure_date=? AND trip_type=? {w}
+                          AND cheapest_price<=?""", args + [float(price)]).fetchone()
+        if not row or not row[0]:
+            return None
+        try:
+            t = datetime.fromisoformat(row[0])
+        except ValueError:
+            return None
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - t).total_seconds() / 86400
+
     def summary_rows(self):
         """Resumo enxuto p/ o CSV: 1 linha por combo, menor preço, ordenado."""
         with closing(self._conn()) as c:

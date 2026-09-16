@@ -30,7 +30,53 @@ logger = setup_logger(__name__)
 
 
 def money(v):
-    return f"R$ {v:.0f}" if v is not None else "—"
+    return f"R$ {v:,.0f}".replace(",", ".") if v is not None else "—"   # 1360 -> R$ 1.360
+
+
+_LEG = {"ida": "só ida", "volta": "só volta", "roundtrip": "ida e volta casada"}
+
+
+def _br(d):
+    """2026-11-19 -> 19/11"""
+    p = str(d).split("-")
+    return f"{p[2]}/{p[1]}" if len(p) == 3 else str(d)
+
+
+def label_legs(routes):
+    """Marca cada oneway como 'ida' ou 'volta': havendo as duas direções do mesmo par
+    no routes.json, a de data mais cedo é a ida. Sem o par oposto, fica 'ida'."""
+    first = {}
+    for r in routes:
+        if r.trip != "roundtrip":
+            k = (r.origin, r.dest)
+            first[k] = min(first[k], r.date) if k in first else r.date
+    for r in routes:
+        rev = first.get((r.dest, r.origin))
+        r.leg = ("roundtrip" if r.trip == "roundtrip"
+                 else "volta" if rev is not None and first[(r.origin, r.dest)] > rev
+                 else "ida")
+
+
+def header(r):
+    """1ª linha do alerta: rota, TIPO (só ida / só volta / ida e volta casada) e data."""
+    if r.leg == "roundtrip" and r.rdate:
+        return (f"✈️ <b>{r.origin}⇄{r.dest}</b> · <b>ida e volta casada</b> · "
+                f"{_br(r.date)} → {_br(r.rdate)}")
+    return f"✈️ <b>{r.origin}→{r.dest}</b> · <b>{_LEG[r.leg]}</b> · {_br(r.date)}"
+
+
+def vs_media(price, avg, days=7):
+    """'18% abaixo da média de 7 dias' — mais legível que percentil de amostras."""
+    if not avg or price >= avg:
+        return ""
+    return f" — <b>{100 * (1 - price / avg):.0f}% abaixo</b> da média de {days} dias"
+
+
+def desde(days):
+    """'menor preço dos últimos N dias' (None = nunca esteve tão barato)."""
+    if days is None:
+        return "\n🏆 <b>menor preço de todo o histórico</b> da rota"
+    return f"\n📉 menor preço dos últimos <b>{days:.0f} dias</b>" if days >= 1 else ""
 
 
 def _fmt_det(d):
@@ -47,7 +93,7 @@ def _fmt_det(d):
         parts.append(f"{du // 60}h{du % 60:02d}")
     if d.get("dep_time"):
         parts.append(f"saída {d['dep_time']}")
-    return ("\n✈️ " + " · ".join(parts)) if parts else ""
+    return ("\n🛫 " + " · ".join(parts)) if parts else ""
 
 
 def _ff_details(r):
@@ -88,6 +134,7 @@ class Route:
         self.iv = 0.0
         self.last_price = None
         self.deal_price = None      # preço do último aviso de "bom negócio" (None = fora da faixa)
+        self.leg = "ida"            # ida | volta | roundtrip (definido por label_legs)
 
     @property
     def label(self):
@@ -111,8 +158,9 @@ def main():
                     help="reinicia o navegador a cada N buscas (evita vazamento de memória)")
     ap.add_argument("--error-pct", type=float, default=0.30,
                     help="fração abaixo da média p/ alertar tarifa-erro (0.30 = 30%%)")
-    ap.add_argument("--deal-pct", type=float, default=0.85,
-                    help="avisa quando o preço for mais barato que esta fração das leituras (30d)")
+    ap.add_argument("--deal-pct", type=float, default=0.97,
+                    help="avisa quando o preço for mais barato que esta fração das leituras (30d); "
+                         "calibrado em 2026-09-15: 0.97 marcava 4 de 35 rotas, 0.85 marcava 32")
     ap.add_argument("--deal-reads", type=int, default=15,
                     help="leituras mínimas p/ confiar no percentil (abaixo disso usa mínima histórica)")
     ap.add_argument("--renotify", type=float, default=0.03,
@@ -159,9 +207,12 @@ def main():
                     if m != mtime:
                         mtime = m
                         routes = [Route(s) for s in routes_store.load(args.routes_file)]
+                        label_legs(routes)          # só ida / só volta / ida e volta casada
                         random.shuffle(routes)      # ordem aleatória (menos previsível)
                         for r in routes:
                             r.best = db.price_history_min(r.origin, r.dest, r.date, r.trip, r.rdate)
+                            # retoma de onde parou: preço que já estava barato não vira aviso novo
+                            r.deal_price = db.last_price(r.origin, r.dest, r.date, r.trip, r.rdate)
                             r.next_due = 0.0
                             r.iv = base_iv
                         logger.info(f"routes.json carregado: {len(routes)} rotas")
@@ -201,6 +252,7 @@ def main():
                     # stats ANTES de gravar: a leitura atual não entra na própria comparação
                     score, nread = db.deal_score(r.origin, r.dest, r.date, r.trip, price, r.rdate)
                     avg, nreads = db.recent_stats(r.origin, r.dest, r.date, r.trip, r.rdate)
+                    dias = db.days_since_cheaper(r.origin, r.dest, r.date, r.trip, price, r.rdate)
                     db.record_price_point(r.origin, r.dest, r.date, r.trip, price,
                                           "", 1, checked_at, return_date=r.rdate)
                     drop = (r.best - price) if (r.best is not None and price < r.best) else 0
@@ -217,17 +269,12 @@ def main():
                     below = r.threshold is not None and price <= r.threshold
                     if worth:
                         hit = f"\n🎯 abaixo do alvo {money(r.threshold)}!" if below else ""
-                        tag = "🔥 MÍNIMA HISTÓRICA — " if drop > 0 else ""
-                        cmp_ = (f"mais barato que {100 * score:.0f}% das leituras (30d)"
-                                if score is not None and nread >= args.deal_reads
-                                else f"economia {money(drop)}")
-                        broadcast(f"✈️ <b>{r.label}</b>\n{tag}<b>{money(price)}</b> — {cmp_}."
-                                  f"\n📊 média {money(avg)} · mínima {money(r.best)}"
-                                  f"{det_str}{hit}{link}")
+                        broadcast(f"{header(r)}\n💰 <b>{money(price)}</b>"
+                                  f"{vs_media(price, avg)}{desde(dias)}{det_str}{hit}{link}")
                     elif below and not r.threshold_alerted:
                         # cruzou o alvo sem estar na faixa boa (antes ficava mudo)
-                        broadcast(f"🎯 <b>{r.label}</b>\n<b>{money(price)}</b> — abaixo do "
-                                  f"alvo {money(r.threshold)}.{det_str}{link}")
+                        broadcast(f"{header(r)}\n🎯 <b>{money(price)}</b> — abaixo do alvo "
+                                  f"{money(r.threshold)}.{det_str}{link}")
                     r.threshold_alerted = below
                     if worth:
                         r.deal_price = price      # referência p/ o próximo aviso da mesma rota
@@ -235,9 +282,9 @@ def main():
                         r.deal_price = None       # saiu da faixa boa -> rearma
                     if is_error and not r.error_alerted:
                         pct = 100 * (1 - price / avg)
-                        broadcast(f"🚨 <b>POSSÍVEL TARIFA-ERRO</b>\n{r.label}\n"
-                                  f"<b>{money(price)}</b> — {pct:.0f}% abaixo da média "
-                                  f"({money(avg)})!{det_str}{link}")
+                        broadcast(f"🚨 <b>POSSÍVEL TARIFA-ERRO</b>\n{header(r)}\n"
+                                  f"💰 <b>{money(price)}</b> — {pct:.0f}% abaixo da média de 7 "
+                                  f"dias ({money(avg)})!{desde(dias)}{det_str}{link}")
                         r.error_alerted = True
                     elif not is_error:
                         r.error_alerted = False

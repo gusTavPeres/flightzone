@@ -68,6 +68,30 @@ def notify_tests():
     return ok
 
 
+def label_tests():
+    """Cabeçalho do alerta: rota, tipo de trecho e data."""
+    from realprice_monitor import Route, label_legs, header, vs_media, desde
+    rs = [Route({"from": "GYN", "to": "JPA", "date": "2026-11-19"}),
+          Route({"from": "JPA", "to": "GYN", "date": "2026-11-29"}),
+          Route({"from": "GYN", "to": "JPA", "date": "2026-11-20",
+                 "trip": "roundtrip", "return_date": "2026-12-02"}),
+          Route({"from": "CGH", "to": "SDU", "date": "2026-10-01"})]
+    label_legs(rs)
+    ok = _ok("par GYN->JPA (nov 19) é a IDA", "só ida" in header(rs[0]) and "19/11" in header(rs[0]))
+    ok &= _ok("par JPA->GYN (nov 29) é a VOLTA", "só volta" in header(rs[1]))
+    ok &= _ok("roundtrip = ida e volta casada com as 2 datas",
+              "ida e volta casada" in header(rs[2]) and "20/11 → 02/12" in header(rs[2]))
+    ok &= _ok("rota sem par oposto fica como ida", "só ida" in header(rs[3]))
+    from realprice_monitor import money
+    ok &= _ok("preço com separador de milhar", money(1360) == "R$ 1.360" and money(679) == "R$ 679")
+    ok &= _ok("% vs média de 7 dias", vs_media(820, 1000).startswith(" — <b>18% abaixo</b>"))
+    ok &= _ok("preço acima da média não vira texto", vs_media(1200, 1000) == "")
+    ok &= _ok("nunca esteve tão barato -> histórico", "todo o histórico" in desde(None))
+    ok &= _ok("menor preço dos últimos N dias", "12 dias" in desde(12.4))
+    ok &= _ok("menos de 1 dia não vira linha", desde(0.3) == "")
+    return ok
+
+
 def db_tests():
     """Testa as queries do banco num SQLite temporário (offline)."""
     import tempfile
@@ -83,6 +107,13 @@ def db_tests():
                                   (now - timedelta(hours=3 - i)).isoformat())
         ok &= _ok("price_history_min = menor já visto",
                   db.price_history_min("GYN", "JPA", "2026-11-20", "oneway") == 800)
+        ok &= _ok("last_price = leitura mais recente (não a menor)",
+                  db.last_price("GYN", "JPA", "2026-11-20", "oneway") == 850)
+        ok &= _ok("days_since_cheaper: nunca esteve a 790",
+                  db.days_since_cheaper("GYN", "JPA", "2026-11-20", "oneway", 790) is None)
+        ok &= _ok("days_since_cheaper: viu <=805 há ~2h",
+                  abs(db.days_since_cheaper("GYN", "JPA", "2026-11-20", "oneway", 805)
+                      - 2 / 24) < 0.01)
         rows = db.price_by_date("GYN", "JPA")
         ok &= _ok("price_by_date: atual é a ÚLTIMA leitura (não o mínimo)",
                   rows and rows[0]["price"] == 850 and rows[0]["min_price"] == 800)
@@ -125,6 +156,8 @@ def main():
     ok = parser_tests()
     print("=== banco ===")
     ok = db_tests() and ok
+    print("=== rótulos ===")
+    ok = label_tests() and ok
     print("=== regra de aviso ===")
     ok = deal_tests() and ok
     print("=== notificação ===")
