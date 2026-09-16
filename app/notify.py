@@ -83,7 +83,9 @@ def discord_configured() -> bool:
 
 
 def _md(text: str) -> str:
-    """HTML do Telegram -> markdown do Discord (só usamos <b>)."""
+    """HTML do Telegram -> markdown do Discord (usamos só <b> e <a href>)."""
+    text = re.sub(r'<a href="([^"]+)">([^<]*)</a>',
+                  lambda m: f"[{m.group(2)}](<{m.group(1).replace('&amp;', '&')}>)", text)
     return re.sub(r"</?b>", "**", text)
 
 
@@ -93,8 +95,10 @@ def discord_send(text: str) -> bool:
     if not hook:
         return False
     data = json.dumps({"content": _md(text)[:1900]}).encode()   # limite do Discord: 2000
-    req = urllib.request.Request(hook, data=data,
-                                 headers={"Content-Type": "application/json"})
+    # UA obrigatório: o Cloudflare do Discord devolve 403 pro "Python-urllib" padrão
+    req = urllib.request.Request(hook, data=data, headers={
+        "Content-Type": "application/json",
+        "User-Agent": "FlightZone (https://github.com/gusTavPeres/flightzone, 1.0)"})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             return getattr(r, "status", 200) in (200, 204)

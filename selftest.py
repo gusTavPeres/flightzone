@@ -60,6 +60,9 @@ def notify_tests():
     from app.notify import _md, discord_send
     ok = _ok("<b> vira ** no Discord",
              _md("✈️ <b>GYN->JPA</b>\n<b>R$ 802</b> — bom") == "✈️ **GYN->JPA**\n**R$ 802** — bom")
+    ok &= _ok("<a href> vira link markdown (sem preview)",
+              _md('🔗 <a href="https://x/y?a=1&amp;b=2">abrir</a>')
+              == "🔗 [abrir](<https://x/y?a=1&b=2>)")
     if not os.getenv("DISCORD_WEBHOOK") and not os.path.exists("discord.json"):
         ok &= _ok("sem webhook -> no-op silencioso", discord_send("teste") is False)
     return ok

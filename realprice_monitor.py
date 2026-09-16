@@ -176,6 +176,8 @@ def main():
                     time.sleep(min(wake - now, 30))
                     continue
                 url = gflights_url(r.origin, r.dest, r.date, r.trip, r.rdate)
+                # &amp; porque o Telegram parseia a mensagem como HTML (_md desfaz p/ o Discord)
+                link = f'\n🔗 <a href="{url.replace("&", "&amp;")}">abrir no Google Flights</a>' 
                 checked_at = datetime.now(timezone.utc).isoformat()
                 sim = checks < args.sim_block                  # TESTE: força "bloqueio"
                 try:
@@ -221,11 +223,11 @@ def main():
                                 else f"economia {money(drop)}")
                         broadcast(f"✈️ <b>{r.label}</b>\n{tag}<b>{money(price)}</b> — {cmp_}."
                                   f"\n📊 média {money(avg)} · mínima {money(r.best)}"
-                                  f"{det_str}{hit}")
+                                  f"{det_str}{hit}{link}")
                     elif below and not r.threshold_alerted:
                         # cruzou o alvo sem estar na faixa boa (antes ficava mudo)
                         broadcast(f"🎯 <b>{r.label}</b>\n<b>{money(price)}</b> — abaixo do "
-                                  f"alvo {money(r.threshold)}.{det_str}")
+                                  f"alvo {money(r.threshold)}.{det_str}{link}")
                     r.threshold_alerted = below
                     if worth:
                         r.deal_price = price      # referência p/ o próximo aviso da mesma rota
@@ -235,7 +237,7 @@ def main():
                         pct = 100 * (1 - price / avg)
                         broadcast(f"🚨 <b>POSSÍVEL TARIFA-ERRO</b>\n{r.label}\n"
                                   f"<b>{money(price)}</b> — {pct:.0f}% abaixo da média "
-                                  f"({money(avg)})!{det_str}")
+                                  f"({money(avg)})!{det_str}{link}")
                         r.error_alerted = True
                     elif not is_error:
                         r.error_alerted = False
