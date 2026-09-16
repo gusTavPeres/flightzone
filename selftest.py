@@ -60,6 +60,14 @@ def notify_tests():
     from app.notify import _md, discord_send
     ok = _ok("<b> vira ** no Discord",
              _md("✈️ <b>GYN->JPA</b>\n<b>R$ 802</b> — bom") == "✈️ **GYN->JPA**\n**R$ 802** — bom")
+    from app.notify import _payload
+    b = _payload("<b>R$ 679</b>", "1234567890")
+    ok &= _ok("marca o cargo na frente da mensagem", b["content"].startswith("<@&1234567890> **R$ 679**"))
+    ok &= _ok("allowed_mentions só libera esse cargo",
+              b["allowed_mentions"] == {"parse": [], "roles": ["1234567890"]})
+    ok &= _ok("sem cargo não marca ninguém",
+              _payload("oi")["allowed_mentions"] == {"parse": []}
+              and _payload("oi")["content"] == "oi")
     ok &= _ok("<a href> vira link markdown (sem preview)",
               _md('🔗 <a href="https://x/y?a=1&amp;b=2">abrir</a>')
               == "🔗 [abrir](<https://x/y?a=1&b=2>)")

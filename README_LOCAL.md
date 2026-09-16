@@ -131,6 +131,18 @@ no **Discord**. Painel web com histórico e matriz ida-e-volta em
 cd ~/flightzone && echo '{"webhook": "<URL_COPIADA>"}' > discord.json && chmod 600 discord.json
 systemctl --user restart flightzone-realprice
 ```
+
+**Marcar um cargo (@viagens, por ex.):** ative *Configurações do usuário → Avançado
+→ Modo desenvolvedor*, clique com o direito no cargo em *Config. do servidor →
+Cargos → Copiar ID* (ou mande `\@Cargo` num canal: o Discord revela o ID cru), e
+acrescente `role_id` ao arquivo:
+```bash
+echo '{"webhook": "<URL>", "role_id": "<ID_DO_CARGO>"}' > discord.json
+chmod 600 discord.json && systemctl --user restart flightzone-realprice
+```
+A menção entra na frente de todo alerta de preço; `allowed_mentions` libera só
+esse cargo (um `@everyone` que aparecesse no texto não pinga ninguém). Sem
+`role_id`, nada é marcado.
 Vão pro canal só os alertas de preço (preço bom, abaixo do alvo, tarifa-erro);
 heartbeat, bloqueio e resumo diário continuam só no Telegram. Ajuste o rigor com
 `--deal-pct` (0.97 = só o top 3% mais barato do mês) e `--renotify` na unit do

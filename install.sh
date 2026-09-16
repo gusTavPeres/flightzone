@@ -155,4 +155,4 @@ systemctl --user is-active flightzone-realprice flightzone-web | sed 's/^/    /'
 echo
 echo "✅ Pronto. Web em http://$HOSTBIND:$PORTBIND"
 echo "   Alertas no Telegram:  $PY telegram_setup.py <SEU_TOKEN>"
-echo "   Alertas no Discord:   echo '{\"webhook\": \"<URL_DO_WEBHOOK>\"}' > discord.json"
+echo "   Alertas no Discord:   echo '{\"webhook\": \"<URL>\", \"role_id\": \"<CARGO>\"}' > discord.json"
