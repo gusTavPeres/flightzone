@@ -158,9 +158,10 @@ def main():
                     help="reinicia o navegador a cada N buscas (evita vazamento de memória)")
     ap.add_argument("--error-pct", type=float, default=0.30,
                     help="fração abaixo da média p/ alertar tarifa-erro (0.30 = 30%%)")
-    ap.add_argument("--deal-pct", type=float, default=0.97,
+    ap.add_argument("--deal-pct", type=float, default=0.98,
                     help="avisa quando o preço for mais barato que esta fração das leituras (30d); "
-                         "calibrado em 2026-09-15: 0.97 marcava 4 de 35 rotas, 0.85 marcava 32")
+                         "calibrado em 2026-09-15: 0.98 marcava 2 de 35 rotas, 0.97 marcava 4, "
+                         "0.85 marcava 32")
     ap.add_argument("--deal-reads", type=int, default=15,
                     help="leituras mínimas p/ confiar no percentil (abaixo disso usa mínima histórica)")
     ap.add_argument("--renotify", type=float, default=0.03,
